@@ -15,12 +15,12 @@ from telegram.ext import (
     CallbackQueryHandler
 )
 
-# ----------- 1. KEEP ALIVE SERVER (For Render) -----------
+# ----------- 1. KEEP ALIVE SERVER -----------
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "HSC Fee Bot is Alive!"
+    return "HSC Bot is Online!"
 
 def run():
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
@@ -30,23 +30,23 @@ def keep_alive():
     t.start()
 
 # ----------- 2. CONFIGURATION -----------
-BOT_TOKEN = "8687725670:AAGL7ul92ppIqLgnx5vei9s1FtbFKOI8Fg0" # এখানে আপনার টোকেন বসান
+BOT_TOKEN = "8687725670:AAGL7ul92ppIqLgnx5vei9s1FtbFKOI8Fg0" # আপনার টোকেন অটোমেটিক বসিয়ে দেওয়া হয়েছে
 
 headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
 }
 
-# ----------- 3. HSC DATA SCRAPER -----------
+# ----------- 3. SMART DATA SCRAPER (Separate Fields) -----------
 def get_data(tid):
-    # HSC ফি পেমেন্ট ভাউচার ইউআরএল
     url = f"https://billpay.sonalibank.com.bd/HSCFee/Home/Voucher/{tid}"
     try:
         r = requests.get(url, headers=headers, timeout=15)
         soup = BeautifulSoup(r.text, "html.parser")
         
         data = {
-            "Transaction ID": tid, "College": "", "Group": "", "Reg. No": "",
-            "Class Roll": "", "Name": "", "Mobile": "", "Year": "",
+            "Transaction ID": tid, "College": "", "Group": "", 
+            "SSC Roll": "N/A", "Class Roll": "N/A", "Reg. No": "N/A",
+            "Name": "", "Mobile": "", "Year": "",
             "Session": "", "Amount(BDT)": "", "Date": "Not Found"
         }
         
@@ -57,11 +57,11 @@ def get_data(tid):
                 key = cols[0].text.strip().replace(":", "")
                 val = cols[1].text.strip()
                 
-                # আপনার পাঠানো ছবির ডাটা ফিল্ড অনুযায়ী ম্যাপিং
                 if "College" in key: data["College"] = val
                 elif "Group" in key: data["Group"] = val
-                elif "Reg. No" in key: data["Reg. No"] = val
+                elif "SSC Roll" in key: data["SSC Roll"] = val
                 elif "Class Roll" in key: data["Class Roll"] = val
+                elif "Reg. No" in key: data["Reg. No"] = val
                 elif "Name" in key: data["Name"] = val
                 elif "Mobile" in key: data["Mobile"] = val
                 elif "Year" in key: data["Year"] = val
@@ -69,7 +69,6 @@ def get_data(tid):
                 elif "Amount" in key: data["Amount(BDT)"] = val
                 elif "Date" in key: data["Date"] = val
 
-        # তারিখ ফিক্স লজিক
         if data["Date"] == "Not Found":
             date_tag = soup.find(string=lambda x: x and "Date" in x)
             if date_tag:
@@ -79,7 +78,7 @@ def get_data(tid):
     except:
         return None
 
-# ----------- 4. RESULT SENDER -----------
+# ----------- 4. RESULT SENDER FORMAT -----------
 async def process_roll(update_or_query, data_list):
     final_text = ""
     unique_phones = []
@@ -88,7 +87,24 @@ async def process_roll(update_or_query, data_list):
         phone = data["Mobile"]
         wa_phone = "880" + phone[1:] if phone.startswith("0") else phone
         
-        final_text += f"📄 Result {i}\n<pre>\nTransaction ID: {data['Transaction ID']}\nCollege       : {data['College']}\nGroup         : {data['Group']}\nReg. No       : {data['Reg. No']}\nClass Roll    : {data['Class Roll']}\nName          : {data['Name']}\nMobile        : {data['Mobile']}\nYear          : {data['Year']}\nSession       : {data['Session']}\nAmount(BDT)   : {data['Amount(BDT)']}\nDate          : {data['Date']}\n</pre>\n\n"
+        # এখানে তিনটি রোল/রেজিস্ট্রেশন আলাদা লাইনে দেখানো হয়েছে
+        final_text += (
+            f"📄 Result {i}\n"
+            f"<pre>\n"
+            f"Transaction ID: {data['Transaction ID']}\n"
+            f"College       : {data['College']}\n"
+            f"Group         : {data['Group']}\n"
+            f"SSC Roll      : {data['SSC Roll']}\n"
+            f"Class Roll    : {data['Class Roll']}\n"
+            f"Reg. No       : {data['Reg. No']}\n"
+            f"Name          : {data['Name']}\n"
+            f"Mobile        : {data['Mobile']}\n"
+            f"Year          : {data['Year']}\n"
+            f"Session       : {data['Session']}\n"
+            f"Amount(BDT)   : {data['Amount(BDT)']}\n"
+            f"Date          : {data['Date']}\n"
+            f"</pre>\n\n"
+        )
         
         if wa_phone not in unique_phones:
             unique_phones.append(wa_phone)
@@ -114,7 +130,6 @@ async def run_search(update_or_query, context, start_r, end_r):
     total_found = 0
     for i, roll in enumerate(rolls, 1):
         try:
-            # HSC Search URL
             url = f"https://billpay.sonalibank.com.bd/HSCFee/Home/Search?searchStr={roll}"
             r = requests.get(url, headers=headers, timeout=10)
             
@@ -131,7 +146,6 @@ async def run_search(update_or_query, context, start_r, end_r):
                     total_found += 1
                     await process_roll(update_or_query, data_list)
 
-            # আপনার দেওয়া স্ট্যাটাস আপডেট ফরম্যাট
             await status_msg.edit_text(
                 f"⏳ Processing...\n"
                 f"🔢 Roll: {roll}\n"
@@ -140,7 +154,6 @@ async def run_search(update_or_query, context, start_r, end_r):
             )
         except: continue
 
-    # রেজাল্ট শেষে আপনার দেওয়া ফরম্যাট এবং নেক্সট বাটন
     next_kb = [[InlineKeyboardButton("👉 Next 500?", callback_data="next_500")]]
     await msg_source.reply_text(
         f"✅ Done!\n📊 Total: {total_found}",
@@ -150,7 +163,7 @@ async def run_search(update_or_query, context, start_r, end_r):
 # ----------- 6. HANDLERS -----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = [[InlineKeyboardButton("Start", callback_data="btn_ready")]]
-    await update.message.reply_text("HSC ফি চেক বট শুরু করতে নিচের বাটনে ক্লিক করুন:", reply_markup=InlineKeyboardMarkup(kb))
+    await update.message.reply_text("HSC ফি চেক বট শুরু করতে 'Start' বাটনে ক্লিক করুন:", reply_markup=InlineKeyboardMarkup(kb))
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
@@ -161,27 +174,23 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             r = int(text)
             await run_search(update, context, r, r)
-    except:
-        pass
+    except: pass
 
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-
     if query.data == "btn_ready":
         await query.message.reply_text("🚀 Ready!")
-    
     elif query.data == "next_500":
         last_end = context.user_data.get("current_end", 0)
         if last_end > 0:
             await run_search(query, context, last_end + 1, last_end + 500)
 
-# ----------- 7. MAIN START -----------
+# ----------- 7. RUN BOT -----------
 if __name__ == "__main__":
     keep_alive()
     application = ApplicationBuilder().token(BOT_TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(callback_handler))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-    print("✅ HSC Fee Bot is online!")
     application.run_polling()
